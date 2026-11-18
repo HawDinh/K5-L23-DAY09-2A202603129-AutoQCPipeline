@@ -95,4 +95,8 @@ Thí nghiệm huấn luyện công bằng trên Google Colab (T4 GPU): cùng mod
   * Đối chiếu với `07_error_list_v3.txt`: toàn bộ **5 ảnh (7 box)** bị pipeline cảnh báo `BOX_TINY` (`img_0026`, `img_0051`, `img_0069`, `img_0161`, `img_0183`) đều nằm trọn trong tập 10 ảnh mà CVAT lọc ra. CVAT lọc rộng hơn (thêm 5 ảnh và 19 box, điển hình như 4 box `person` ở xa trên `img_0199.jpg`) do ngưỡng lọc slide dùng `width < 20px` lớn hơn ngưỡng dự án cố định `min_box_px = 12px` trong `configs/pipeline.yaml` (cạnh ngắn < 12px).
 * **Thuộc tính `can_review`:** Người gán nhãn đánh dấu `can_review = true` khi gặp đối tượng mơ hồ, khó phân định lớp hoặc bị che khuất để chuyển cho người duyệt cấp trên kiểm tra; trong pipeline tự động, cơ chế tương đương là việc các bộ kiểm cắm cờ mức `WARN` và đẩy ảnh vào hàng đợi ưu tiên `05_review_queue.csv`.
 
-![Minh chứng lọc width < 20 trên CVAT (img_0199.jpg — khớp 4 box person ở xa)](reports/cvat_filter.jpg)
+Ảnh chụp thứ nhất hiển thị quy tắc `Width < 20` trên CVAT; ảnh thứ hai cho thấy 4 box `person` của `img_0199.jpg` trong danh sách và box được chọn rộng 18.8 px.
+
+![Quy tắc lọc Width < 20 trên CVAT](reports/cvat_filter_rule.png)
+
+![Kết quả lọc trên img_0199.jpg với 4 box person](reports/cvat_filter_result.png)
