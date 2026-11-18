@@ -61,7 +61,22 @@ python -m pipeline.run --budget 0 --reports work/rep_nb --export-dir work/exp_nb
 3. **Đối tượng bị che khuất một phần (occlusion) hoặc kích thước rất nhỏ:** Vật thể nhỏ dưới 600 px² bị bộ lọc `min_area_px` bỏ qua để tránh nhiễu, dẫn đến việc nếu người gán bỏ sót vật nhỏ thì pipeline cũng không cảnh báo.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-Chưa chạy (sẽ thực hiện trên Google Colab theo [docs/COLAB.md](docs/COLAB.md) và notebook [notebooks/day09_train_compare.ipynb](notebooks/day09_train_compare.ipynb)).
+Thí nghiệm huấn luyện công bằng trên Google Colab (T4 GPU): cùng model khởi tạo `yolo26n.pt`, 20 epoch, batch size 16, 2 seed (`0`, `1`), cùng tập val (`data/gold_val`, 40 ảnh) và tập test (`data/test`, 100 ảnh nhãn người). Bảng tổng hợp từ `submission/results/comparison.md`:
+
+| biến thể | #ảnh train | số seed | map50 (TB ± độ lệch) | map50_95 (TB ± độ lệch) | precision (TB ± độ lệch) | recall (TB ± độ lệch) |
+|---|---:|---:|---|---|---|---|
+| `raw` | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| `clean` | 203 | 2 | 0.695 ± 0.010 | 0.482 ± 0.007 | 0.726 ± 0.005 | 0.619 ± 0.016 |
+
+* **Chênh lệch mAP50 (`clean − raw`):** **−0.031** (mức giảm lớn hơn độ lệch chuẩn giữa 2 seed của `clean` là ± 0.010; tuy nhiên nếu nhìn AP50 theo từng lớp: `car` 0.738 → 0.734 và `person` 0.822 → 0.818 gần như tương đương trong nhiễu, `bus` tăng nhẹ 0.695 → 0.704, trong khi riêng lớp `truck` giảm mạnh 0.648 → 0.524 và dao động tới 0.085 giữa seed 0 [0.481] và seed 1 [0.566]).
+* **Kết luận trung thực:** Trên tập test hiện tại với 2 seed, **không thể kết luận `clean` cho model tốt hơn `raw`**; ngược lại `mAP50` của `clean` đang thấp hơn `raw` 0.031 chủ yếu do lớp hiếm `truck` và lợi thế rò rỉ dữ liệu của `raw`.
+* **Các giả thuyết giải thích và cách kiểm chứng:**
+  1. **Rò rỉ tập test (`LEAK_TEST`) thổi phồng điểm của `raw`:** Ở Bước 1, pipeline phát hiện `raw` chứa **5 ảnh trùng trực tiếp với tập test** (`img_0049`/`test_033`, `img_0101`/`test_039`, `img_0167`/`test_044`, `img_0174`/`test_085`, `img_0221`/`test_009`, gồm 12 box `person`, 8 `car` và 1 `truck`). Do `raw` được học thuộc đúng 5% số ảnh của tập test nên chỉ số đo của `raw` bị thổi phồng ảo. *Cách kiểm:* Tạo biến thể `raw_no_leak` (chỉ loại riêng 5 ảnh `LEAK_TEST`) và train lại cùng 2 seed để so sánh công bằng.
+  2. **Lớp `truck` rất hiếm (chỉ 41 box trong `class_stats.csv`) và `clean` vẫn đang ở trạng thái Hold:** Khi loại 21 ảnh và còn 44/203 ảnh mang cảnh báo chưa được duyệt hết (trong `07_error_list_v3.txt` vẫn còn 3 cảnh báo nhầm lớp `car`/`truck` và 2 cảnh báo thiếu nhãn `truck`), kết hợp tập test chỉ 100 ảnh, mô hình rất nhạy với phương sai seed trên lớp `truck`. *Cách kiểm:* Duyệt nốt 44 ảnh Hold (đặc biệt các ảnh chứa `truck`), đối chiếu thêm với biến thể `oracle` (nhãn người chuẩn) và tăng số seed lên 3–5.
+  3. **Ultralytics tự bỏ qua lỗi cú pháp của `raw`:** Khi nạp `raw`, bộ loader của YOLO tự bỏ các ảnh hỏng và dòng sai định dạng nên `raw` không bị sập khi train.
+* **Việc tiếp theo:** Chạy đối chứng `raw_no_leak`, hoàn tất duyệt 44 ảnh còn lại để chuyển lô dữ liệu từ **Hold** sang **Release**, và thu thập bổ sung dữ liệu cho hai lớp ít mẫu (`truck`: 41 box, `bus`: 30 box).
+
+![Biểu đồ so sánh kết quả train raw vs clean](results/comparison.png)
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định cuối:**
@@ -72,3 +87,12 @@ Chưa chạy (sẽ thực hiện trên Google Colab theo [docs/COLAB.md](docs/CO
 * **Prompt chính:** Cung cấp đầy đủ 4 ý theo chuẩn bài giảng: nêu rõ vai trò kiểm tra chất lượng nhãn YOLO, cung cấp docstring chi tiết của từng stub module (`label_format`, `gate`, `autofix`, `second_opinion`), yêu cầu trả về dataclass `Issue` với định dạng trường chuẩn, và liệt kê các ca biên (file rỗng, dòng chứa NaN, box âm, clipping tràn viền).
 * **Cách kiểm tra code AI:** Chạy bộ kiểm thử 79 unit tests qua `pytest` (đạt 100% passed), chạy sweep calibration để đối chiếu Precision/Recall trên tập `data/calib/`, và chạy kiểm tra đầu cuối (end-to-end) với pipeline thực tế trên 224 ảnh raw.
 * **Một lần AI gợi ý chưa tối ưu:** Trong module `autofix.py`, ban đầu khi xử lý cắt box tràn ảnh (`BOX_OUT_OF_IMAGE`), thuật toán thử tính tọa độ box mới cho cả trường hợp box nằm hoàn toàn ngoài biên âm, tạo ra box có kích thước âm/rỗng; sau khi đối chiếu với `test_box_fully_outside_is_dropped_not_negative`, logic đã được hoàn thiện thành: nếu sau khi clip mà `nw <= 0` hoặc `nh <= 0` thì chuyển action thành `drop_line`.
+
+**(c) Thưởng +2 — Lọc box nhỏ trên CVAT (`width < 20`):**
+* **Phạm vi thực hiện:** Tạo project CVAT với nhãn chuẩn từ `cvat/labels.json`, tải lên 20 ảnh đại diện từ `work/run/ds/images/` (gồm 15 ảnh đầu `05_review_queue.csv` và 5 ảnh có `BOX_TINY`), import nhãn định dạng YOLO 1.1 và áp dụng bộ lọc `width < 20`.
+* **Kết quả lọc và đối chiếu với `BOX_TINY` của pipeline:**
+  * Bộ lọc `width < 20` trên CVAT bắt được **26 box trên 10 ảnh**: `img_0020.jpg` (3), `img_0026.jpg` (6), `img_0051.jpg` (3), `img_0053.jpg` (1), `img_0067.jpg` (1), `img_0069.jpg` (2), `img_0135.jpg` (2), `img_0161.jpg` (3), `img_0183.jpg` (1), `img_0199.jpg` (4).
+  * Đối chiếu với `07_error_list_v3.txt`: toàn bộ **5 ảnh (7 box)** bị pipeline cảnh báo `BOX_TINY` (`img_0026`, `img_0051`, `img_0069`, `img_0161`, `img_0183`) đều nằm trọn trong tập 10 ảnh mà CVAT lọc ra. CVAT lọc rộng hơn (thêm 5 ảnh và 19 box, điển hình như 4 box `person` ở xa trên `img_0199.jpg`) do ngưỡng lọc slide dùng `width < 20px` lớn hơn ngưỡng dự án cố định `min_box_px = 12px` trong `configs/pipeline.yaml` (cạnh ngắn < 12px).
+* **Thuộc tính `can_review`:** Người gán nhãn đánh dấu `can_review = true` khi gặp đối tượng mơ hồ, khó phân định lớp hoặc bị che khuất để chuyển cho người duyệt cấp trên kiểm tra; trong pipeline tự động, cơ chế tương đương là việc các bộ kiểm cắm cờ mức `WARN` và đẩy ảnh vào hàng đợi ưu tiên `05_review_queue.csv`.
+
+![Minh chứng lọc width < 20 trên CVAT (img_0199.jpg — khớp 4 box person ở xa)](reports/cvat_filter.jpg)
