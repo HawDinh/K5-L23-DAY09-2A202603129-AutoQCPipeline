@@ -19,13 +19,17 @@ from pathlib import Path
 
 import yaml
 
-from ..common import ERROR, parse_yolo_line
+from ..common import ERROR, ROOT, parse_yolo_line
 
 DROP_CODES = {"BAD_FORMAT", "BAD_CLASS_ID", "BOX_ZERO", "DUP_BOX"}
 REMOVE_IMAGE_CODES = {"LEAK_TEST", "CORRUPT_IMAGE", "BAD_SIZE"}
 
 
 def fix(ds, issues, cfg):
+    raw_dir = (ROOT / "data" / "raw").resolve()
+    if ds.root.resolve() == raw_dir or raw_dir in ds.root.resolve().parents:
+        raise ValueError("autofix không được sửa data/raw")
+
     err_issues = [i for i in issues if i.severity == ERROR]
     fixes = []
     removed_images = set()
@@ -37,9 +41,11 @@ def fix(ds, issues, cfg):
             if stem not in removed_images:
                 removed_images.add(stem)
                 img_p = ds.image_path(stem)
+                lbl_p = ds.label_path(stem)
+                if not ((img_p and img_p.exists()) or (lbl_p and lbl_p.exists())):
+                    continue
                 if img_p and img_p.exists():
                     img_p.unlink()
-                lbl_p = ds.label_path(stem)
                 if lbl_p and lbl_p.exists():
                     lbl_p.unlink()
                 fixes.append({
@@ -58,15 +64,16 @@ def fix(ds, issues, cfg):
         except Exception:
             data = {}
         before = str(data.get("names", ""))
-        data["names"] = list(cfg["classes"])
-        ds.yaml_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        fixes.append({
-            "image": "data.yaml",
-            "line": "",
-            "action": "rename_classes",
-            "before": before,
-            "after": str(cfg["classes"]),
-        })
+        if data.get("names") != list(cfg["classes"]):
+            data["names"] = list(cfg["classes"])
+            ds.yaml_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            fixes.append({
+                "image": "data.yaml",
+                "line": "",
+                "action": "rename_classes",
+                "before": before,
+                "after": str(cfg["classes"]),
+            })
 
     # 3. needs_label: MISSING_LABEL_FILE
     needs_label_seen = set()

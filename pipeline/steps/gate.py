@@ -39,14 +39,15 @@ def decide(issues, image_stems, cfg, reviewed=frozenset()):
     }
     n_warn_images = len(warn_images)
 
-    warn_ratio = round(n_warn_images / n_images, 4) if n_images > 0 else 0.0
+    exact_warn_ratio = n_warn_images / n_images if n_images > 0 else 0.0
+    warn_ratio = round(exact_warn_ratio, 4)
     warn_ratio_hold = cfg.get("gate", {}).get("warn_ratio_hold", 0.10)
 
     reasons = []
     if n_errors > 0:
         decision = "Rework"
         reasons.append(f"Còn {n_errors} lỗi bắt buộc (Rework)")
-    elif warn_ratio >= warn_ratio_hold:
+    elif exact_warn_ratio >= warn_ratio_hold:
         decision = "Hold"
         reasons.append(f"Tỉ lệ ảnh có cảnh báo {warn_ratio:.2%} >= {warn_ratio_hold:.2%} ({n_warn_images}/{n_images} ảnh) (Hold)")
     else:

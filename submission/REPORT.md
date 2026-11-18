@@ -2,18 +2,18 @@
 
 ## 1. Kết luận trước
 Pipeline kiểm nhãn tự động đưa ra kết luận **Hold**.
-Toàn bộ lô dữ liệu đầu vào gồm **224 ảnh** thô. Ở Bước 1 (Intake), bộ lọc cửa vào đã loại bỏ **21 ảnh** không đạt chuẩn (ảnh hỏng, quá nhỏ, trùng lặp, rò rỉ tập test/val), đưa **203 ảnh** hợp lệ vào pipeline. Sau vòng tự động sửa lỗi và mô phỏng người duyệt với ngân sách 80 ảnh, pipeline sạch hoàn toàn lỗi bắt buộc (0 ERROR), nhưng còn **44/203 ảnh** (tỉ lệ cảnh báo **21.67%**, vượt ngưỡng quy định **10.00%**) mang cảnh báo ngữ nghĩa chưa được duyệt. Dataset đã được xuất bản nháp (draft) 203 ảnh tại `submission/export/clean_v1/` để phục vụ thử nghiệm và đối chiếu mô hình.
+Toàn bộ lô dữ liệu đầu vào gồm **224 ảnh** thô. Ở Bước 1 (Intake), bộ lọc cửa vào đã loại bỏ **21 ảnh** không đạt chuẩn (ảnh hỏng, quá nhỏ, trùng lặp, rò rỉ tập test/val), đưa **203 ảnh** hợp lệ vào pipeline. Sau vòng tự động sửa lỗi và mô phỏng người duyệt với ngân sách 80 ảnh, pipeline sạch hoàn toàn lỗi bắt buộc (0 ERROR), nhưng còn **44/203 ảnh** (tỉ lệ cảnh báo **21.67%**, vượt ngưỡng quy định **10.00%**) mang cảnh báo chưa được duyệt. Dataset đã được xuất bản nháp (draft) 203 ảnh tại `submission/export/clean_v1/` để phục vụ thử nghiệm và đối chiếu mô hình.
 
 ## 2. Lỗi và phân việc
 Dưới đây là thống kê toàn bộ các mã lỗi xuất hiện trong lô dữ liệu từ `02_error_list_v1`:
 
 | Mã lỗi | Số ảnh/dòng | Ai sửa (máy/người) | Vì sao |
 |---|---:|---|---|
-| `CORRUPT_IMAGE` | 2 ảnh | Máy (autofix) | Ảnh hỏng không mở/load được (UnidentifiedImageError, OSError); máy loại bỏ trực tiếp khỏi dataset. |
-| `BAD_SIZE` | 3 ảnh | Máy (autofix) | Ảnh có cạnh ngắn < 250px không đủ độ phân giải chuẩn; máy loại bỏ. |
-| `DUP_IMAGE_EXACT` | 8 ảnh | Máy (autofix) | Ảnh trùng từng byte (trùng MD5 hash); máy giữ ảnh đầu tiên và loại ảnh trùng sau để tránh thiên lệch. |
-| `LEAK_TEST` | 5 ảnh | Máy (autofix) | Ảnh bị rò rỉ từ tập test/gold_val; máy bắt buộc loại bỏ để tránh rò rỉ dữ liệu (data leakage). |
-| `DUP_IMAGE_NEAR` | 3 ảnh | Máy (autofix) | Ảnh trùng cấu trúc gần đúng (pHash Hamming distance ≤ 8); máy loại bỏ để tăng tính đa dạng. |
+| `CORRUPT_IMAGE` | 2 ảnh | Máy (intake) | Ảnh hỏng không mở/load được (UnidentifiedImageError, OSError); intake không chép vào dataset làm việc. |
+| `BAD_SIZE` | 3 ảnh | Máy (intake) | Ảnh có cạnh ngắn < 250px không đủ độ phân giải chuẩn; intake loại bỏ. |
+| `DUP_IMAGE_EXACT` | 8 ảnh | Máy (intake) | Ảnh trùng từng byte (trùng MD5 hash); intake giữ ảnh đầu tiên và loại ảnh trùng sau để tránh thiên lệch. |
+| `LEAK_TEST` | 5 ảnh | Máy (intake) | Ảnh bị rò rỉ từ tập test/gold_val; intake loại bỏ để tránh rò rỉ dữ liệu (data leakage). |
+| `DUP_IMAGE_NEAR` | 3 ảnh | Máy (intake) | Ảnh trùng cấu trúc gần đúng (pHash Hamming distance ≤ 8); intake loại bỏ để tăng tính đa dạng. |
 | `BAD_CLASS_NAME` | 2 lỗi | Máy (autofix) | Tên lớp trong `data.yaml` viết hoa sai quy chuẩn ('Person', 'Bus'); máy đổi lại thành 'person', 'bus'. |
 | `BAD_FORMAT` | 3 dòng | Máy (autofix) | Dòng nhãn thiếu cột hoặc chứa giá trị không hợp lệ (NaN); máy xóa dòng lỗi. |
 | `BAD_CLASS_ID` | 6 dòng | Máy (autofix) | ID lớp nằm ngoài phạm vi 0..3 (vd: 93, 7, 4, -1); máy xóa dòng lỗi. |
@@ -32,7 +32,7 @@ Dưới đây là thống kê toàn bộ các mã lỗi xuất hiện trong lô 
 
 **Giải thích phân bổ hàng đợi duyệt `05_review_queue.csv`:**
 - Hàng đợi ưu tiên xếp các ảnh có mức độ rủi ro cao nhất lên đầu dựa trên trọng số cấu hình: các ảnh thiếu file nhãn `NEEDS_LABEL` có trọng số 10.0 (chặn phát hành), tiếp theo là các ảnh dính nhiều lỗi ngữ nghĩa kết hợp (vd: `img_0020` có priority 14.528, `img_0185` có priority 10.052 kết hợp `FIXED_DROP_LINE`, `POSSIBLE_MISSING`, `POSSIBLE_WRONG_CLASS`).
-- Với ngân sách 80 ảnh, toàn bộ 6 ảnh thiếu nhãn và 74 ảnh có cảnh báo ngữ nghĩa nặng nhất (chiếm phần lớn các lỗi missing, wrong class, loose box quan trọng) đã được duyệt và khắc phục thành công. 50 ảnh còn lại nằm ngoài ngân sách (gồm 44 ảnh còn mang cảnh báo) chưa được xem xét, khiến tỉ lệ cảnh báo còn tồn đọng ở mức 21.67%.
+- Với ngân sách 80 ảnh, mô phỏng người duyệt đã thay nhãn tham chiếu cho 6 ảnh thiếu nhãn và 74 ảnh tiếp theo theo thứ tự ưu tiên. Việc thay nhãn không đảm bảo mọi cảnh báo trên ảnh đã duyệt biến mất; gate chỉ tính cảnh báo của ảnh chưa duyệt. 50 ảnh còn lại nằm ngoài ngân sách, trong đó 44 ảnh còn cảnh báo được gate tính vào tỉ lệ 21.67%.
 
 ## 3. Calibration (2 ngưỡng)
 Bảng kết quả hiệu chuẩn trên tập `data/calib/` (39 ảnh có đáp án lỗi chèn cố ý):
@@ -43,7 +43,7 @@ Bảng kết quả hiệu chuẩn trên tập `data/calib/` (39 ảnh có đáp 
 | `second_opinion.conf` | 0.25 | 0.50 | MISSING: (0.50 / 1.00) → (0.57 / 1.00), F1: 0.67 → 0.73 | Ngưỡng 0.25 ban đầu quá lỏng, gây ra nhiều báo động giả (FP=8). Tăng lên 0.50 giúp lọc sạch dự đoán nhiễu của checker, Precision tăng từ 50% lên 57% trong khi Recall vẫn giữ trọn vẹn 100% (bắt đủ 8/8 lỗi missing), giúp người duyệt không bị quá tải. |
 
 **Điểm calibration có thể đánh lừa:**
-Tập calib chỉ có 39 ảnh với các ca biến đổi nhân tạo. Nếu chỉ tối ưu số liệu thuần túy trên calib, sweep cho thấy `phash_dist = 16` đạt F1 lên tới 0.91 (Recall 83%). Tuy nhiên, khoảng cách Hamming 16/64 bit (chiếm tới 25% sai khác) là quá lớn đối với tập ảnh tự nhiên ngoài thực tế: trên lô raw 224 ảnh, các bức ảnh chụp cùng cung đường hoặc góc chụp tương tự sẽ rất dễ bị đánh đồng là ảnh trùng lặp và bị xóa nhầm ảnh giá trị. Do đó, việc dừng ở ngưỡng `phash_dist = 8` là đánh đổi an toàn và có cơ sở thực tế.
+Tập calib chỉ có 39 ảnh với các ca biến đổi nhân tạo. Sweep cho thấy `phash_dist = 16` đạt F1 0.91 (Recall 83%), cao hơn ngưỡng 8 (F1 0.80), nhưng kết quả này chưa chứng minh ngưỡng 16 an toàn trên ảnh tự nhiên. Với ngưỡng 8, intake của lô raw ghi nhận 3 cặp gần trùng ở khoảng cách pHash 0, 0 và 6; không có nhãn chuẩn cho toàn bộ cặp ảnh raw để đo số ảnh bị loại nhầm nếu nâng lên 16. Tôi giữ ngưỡng 8 để hạn chế rủi ro loại ảnh khác nhau, và cần xem thủ công các cặp mới ở khoảng cách 9–16 trước khi cân nhắc tăng ngưỡng.
 
 ## 4. Cửa chặn và điều pipeline KHÔNG bắt được
 **(a) Chứng minh Gate chặn đúng:**
@@ -69,10 +69,10 @@ Thí nghiệm huấn luyện công bằng trên Google Colab (T4 GPU): cùng mod
 | `clean` | 203 | 2 | 0.695 ± 0.010 | 0.482 ± 0.007 | 0.726 ± 0.005 | 0.619 ± 0.016 |
 
 * **Chênh lệch mAP50 (`clean − raw`):** **−0.031** (mức giảm lớn hơn độ lệch chuẩn giữa 2 seed của `clean` là ± 0.010; tuy nhiên nếu nhìn AP50 theo từng lớp: `car` 0.738 → 0.734 và `person` 0.822 → 0.818 gần như tương đương trong nhiễu, `bus` tăng nhẹ 0.695 → 0.704, trong khi riêng lớp `truck` giảm mạnh 0.648 → 0.524 và dao động tới 0.085 giữa seed 0 [0.481] và seed 1 [0.566]).
-* **Kết luận trung thực:** Trên tập test hiện tại với 2 seed, **không thể kết luận `clean` cho model tốt hơn `raw`**; ngược lại `mAP50` của `clean` đang thấp hơn `raw` 0.031 chủ yếu do lớp hiếm `truck` và lợi thế rò rỉ dữ liệu của `raw`.
+* **Kết luận trung thực:** Trên tập test hiện tại với 2 seed, **không thể kết luận `clean` cho model tốt hơn `raw`**; `mAP50` của `clean` thấp hơn `raw` 0.031. Lớp hiếm `truck` và ảnh rò rỉ từ tập test là hai giả thuyết cần kiểm chứng, chưa xác định được mức đóng góp của từng yếu tố.
 * **Các giả thuyết giải thích và cách kiểm chứng:**
-  1. **Rò rỉ tập test (`LEAK_TEST`) thổi phồng điểm của `raw`:** Ở Bước 1, pipeline phát hiện `raw` chứa **5 ảnh trùng trực tiếp với tập test** (`img_0049`/`test_033`, `img_0101`/`test_039`, `img_0167`/`test_044`, `img_0174`/`test_085`, `img_0221`/`test_009`, gồm 12 box `person`, 8 `car` và 1 `truck`). Do `raw` được học thuộc đúng 5% số ảnh của tập test nên chỉ số đo của `raw` bị thổi phồng ảo. *Cách kiểm:* Tạo biến thể `raw_no_leak` (chỉ loại riêng 5 ảnh `LEAK_TEST`) và train lại cùng 2 seed để so sánh công bằng.
-  2. **Lớp `truck` rất hiếm (chỉ 41 box trong `class_stats.csv`) và `clean` vẫn đang ở trạng thái Hold:** Khi loại 21 ảnh và còn 44/203 ảnh mang cảnh báo chưa được duyệt hết (trong `07_error_list_v3.txt` vẫn còn 3 cảnh báo nhầm lớp `car`/`truck` và 2 cảnh báo thiếu nhãn `truck`), kết hợp tập test chỉ 100 ảnh, mô hình rất nhạy với phương sai seed trên lớp `truck`. *Cách kiểm:* Duyệt nốt 44 ảnh Hold (đặc biệt các ảnh chứa `truck`), đối chiếu thêm với biến thể `oracle` (nhãn người chuẩn) và tăng số seed lên 3–5.
+  1. **Rò rỉ tập test (`LEAK_TEST`) có thể làm tăng điểm của `raw`:** Ở Bước 1, pipeline phát hiện `raw` chứa **5 ảnh trùng trực tiếp với tập test** (`img_0049`/`test_033`, `img_0101`/`test_039`, `img_0167`/`test_044`, `img_0174`/`test_085`, `img_0221`/`test_009`, gồm 12 box `person`, 8 `car` và 1 `truck`). Đây là 5/100 ảnh test; mức ảnh hưởng lên mAP chưa được đo. *Cách kiểm:* Tạo biến thể `raw_no_leak` (chỉ loại riêng 5 ảnh `LEAK_TEST`) và train lại cùng 2 seed để so sánh công bằng.
+  2. **Lớp `truck` rất hiếm (chỉ 41 box trong `class_stats.csv`) và `clean` vẫn đang ở trạng thái Hold:** Khi loại 21 ảnh và còn 44/203 ảnh mang cảnh báo chưa được duyệt hết, `07_error_list_v3.txt` vẫn có 4 cảnh báo nhầm lớp `car`/`truck` và 3 cảnh báo thiếu nhãn `truck`; cả 7 ảnh liên quan đều chưa được duyệt. Kết hợp tập test chỉ 100 ảnh, mô hình có thể nhạy với phương sai seed trên lớp `truck`. *Cách kiểm:* Duyệt nốt 44 ảnh Hold (đặc biệt các ảnh chứa `truck`), đối chiếu thêm với biến thể `oracle` (nhãn người chuẩn) và tăng số seed lên 3–5.
   3. **Ultralytics tự bỏ qua lỗi cú pháp của `raw`:** Khi nạp `raw`, bộ loader của YOLO tự bỏ các ảnh hỏng và dòng sai định dạng nên `raw` không bị sập khi train.
 * **Việc tiếp theo:** Chạy đối chứng `raw_no_leak`, hoàn tất duyệt 44 ảnh còn lại để chuyển lô dữ liệu từ **Hold** sang **Release**, và thu thập bổ sung dữ liệu cho hai lớp ít mẫu (`truck`: 41 box, `bus`: 30 box).
 
@@ -80,8 +80,8 @@ Thí nghiệm huấn luyện công bằng trên Google Colab (T4 GPU): cùng mod
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định cuối:**
-* Quyết định hiện tại của lô: **Hold** (tỉ lệ cảnh báo 21.67% ≥ 10.00%, với 44/203 ảnh còn cảnh báo ngữ nghĩa).
-* **Điều kiện để chuyển sang Release:** Cần cấp thêm ngân sách duyệt người (tăng từ 80 ảnh lên khoảng 125 ảnh, tức duyệt thêm ~45 ảnh) để người duyệt xác nhận nốt 44 ảnh còn lại trong hàng đợi `05_review_queue.csv`. Khi tỉ lệ cảnh báo chưa duyệt hạ xuống dưới 10%, pipeline sẽ tự động chuyển sang quyết định Release.
+* Quyết định hiện tại của lô: **Hold** (tỉ lệ cảnh báo 21.67% ≥ 10.00%, với 44/203 ảnh còn cảnh báo chưa được duyệt).
+* **Điều kiện để chuyển sang Release:** Cần xử lý mọi lỗi bắt buộc và giảm số ảnh chưa duyệt còn cảnh báo xuống tối đa 20/203 (< 10%). Với số liệu hiện tại, điều đó đòi hỏi duyệt hoặc giải quyết cảnh báo ở ít nhất 24 trong 44 ảnh đang được gate tính; sau đó chạy lại pipeline để kiểm tra quyết định. Duyệt đủ cả 44 ảnh là phương án thận trọng hơn.
 
 **(b) Ghi chú sử dụng AI:**
 * **Prompt chính:** Cung cấp đầy đủ 4 ý theo chuẩn bài giảng: nêu rõ vai trò kiểm tra chất lượng nhãn YOLO, cung cấp docstring chi tiết của từng stub module (`label_format`, `gate`, `autofix`, `second_opinion`), yêu cầu trả về dataclass `Issue` với định dạng trường chuẩn, và liệt kê các ca biên (file rỗng, dòng chứa NaN, box âm, clipping tràn viền).
